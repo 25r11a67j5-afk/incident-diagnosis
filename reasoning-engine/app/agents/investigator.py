@@ -1,19 +1,22 @@
-﻿"""
-Investigator Agent — Pass 1 of 2 (Multi-agent bonus)
+"""
+Investigator Agent - Pass 1 of 2 (Multi-agent bonus)
 Receives correlated data + evidence + timeline.
 Produces ranked hypotheses with evidence links.
 """
 from __future__ import annotations
-import json, os, re
+import json
+import logging
 from typing import Any, Dict, List
-
 from groq import Groq
+from app.agents.groq_client import call_groq_json
+
+logger = logging.getLogger(__name__)
 
 INVESTIGATOR_SCHEMA = """{
   "hypotheses": [
     {
       "id": "H-001",
-      "cause": "string — what went wrong",
+      "cause": "string - what went wrong",
       "confidence": 0.0,
       "evidence_ids": ["E-001", "E-002"]
     }
@@ -31,16 +34,12 @@ def run_investigator(
     client: Groq,
     model: str,
 ) -> Dict[str, Any]:
-    """
-    Pass 1: Investigate the incident and form hypotheses.
-    Returns raw parsed JSON from the LLM.
-    """
     prompt = f"""You are an expert SRE investigating a production incident.
 
 INCIDENT TIMELINE (chronological):
 {json.dumps(timeline, indent=2)}
 
-STRUCTURED EVIDENCE (from Elasticsearch + Prometheus + deployment metadata):
+STRUCTURED EVIDENCE (from observability data + deployment metadata):
 {json.dumps(evidence, indent=2)}
 
 DEPLOYMENT HISTORY:
@@ -71,26 +70,20 @@ Specify what missing_evidence would help resolve the ambiguity.
 Respond with ONLY valid JSON matching this schema:
 {INVESTIGATOR_SCHEMA}"""
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": "You are an expert SRE. Respond with ONLY valid JSON."},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.1,
-        max_tokens=1500,
-    )
-    return _parse_json(response.choices[0].message.content)
+    messages = [
+        {"role": "system", "content": "You are an expert SRE. Respond with ONLY valid JSON matching the exact schema."},
+        {"role": "user", "content": prompt},
+    ]
 
+    data = call_groq_json(client=client, messages=messages, preferred_model=model, max_tokens=3000)
 
-def _parse_json(raw: str) -> Dict:
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        match = re.search(r"```(?:json)?\s*(.*?)```", raw, re.DOTALL)
-        if match:
-            return json.loads(match.group(1))
-        start, end = raw.find("{"), raw.rfind("}")
-        if start != -1 and end != -1:
-            return json.loads(raw[start : end + 1])
-        raise ValueError(f"Could not parse LLM JSON response: {raw[:200]}")
+    if "hypotheses" not in data or not isinstance(data["hypotheses"], list):
+        data["hypotheses"] = []
+    if "evidence_sufficient" not in data:
+        data["evidence_sufficient"] = len(data["hypotheses"]) > 0
+    if "primary_hypothesis_id" not in data and data["hypotheses"]:
+        data["primary_hypothesis_id"] = data["hypotheses"][0].get("id", "H-001")
+    if "missing_evidence" not in data:
+        data["missing_evidence"] = None
+
+    return data

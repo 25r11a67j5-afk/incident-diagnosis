@@ -1,5 +1,6 @@
-﻿"""
-Elasticsearch client — queries logs, traces, and deployments for an incident.
+"""
+Elasticsearch client - queries logs, traces, and deployments for an incident.
+Configured with short timeouts and 0 retries to prevent blocking when offline.
 """
 from __future__ import annotations
 import os
@@ -10,17 +11,15 @@ from elasticsearch import Elasticsearch
 class ESClient:
     def __init__(self, host: str = None):
         self.host = host or os.getenv("ES_HOST", "http://localhost:9200")
-        self.es = Elasticsearch(self.host)
+        self.es = Elasticsearch(self.host, request_timeout=2.0, max_retries=0)
 
     def is_healthy(self) -> bool:
         try:
-            self.es.cluster.health(timeout="2s")
-            return True
+            return bool(self.es.ping())
         except Exception:
             return False
 
     def get_logs(self, incident_id: str, level: Optional[str] = None, size: int = 200) -> List[Dict]:
-        """Fetch log entries, optionally filtered by level."""
         index = f"logs-{incident_id.lower()}"
         query: Dict[str, Any] = {"match_all": {}}
         if level:
@@ -31,11 +30,10 @@ class ESClient:
                 body={"query": query, "sort": [{"timestamp": "asc"}], "size": size}
             )
             return [hit["_source"] for hit in result["hits"]["hits"]]
-        except Exception as e:
+        except Exception:
             return []
 
     def get_error_logs(self, incident_id: str) -> List[Dict]:
-        """Fetch only ERROR and CRITICAL logs."""
         index = f"logs-{incident_id.lower()}"
         try:
             result = self.es.search(
@@ -51,7 +49,6 @@ class ESClient:
             return []
 
     def get_traces(self, incident_id: str) -> List[Dict]:
-        """Fetch distributed trace spans."""
         index = f"traces-{incident_id.lower()}"
         try:
             result = self.es.search(
@@ -63,7 +60,6 @@ class ESClient:
             return []
 
     def get_traces_by_id(self, incident_id: str, trace_id: str) -> List[Dict]:
-        """Get all spans for a specific trace."""
         index = f"traces-{incident_id.lower()}"
         try:
             result = self.es.search(
@@ -75,7 +71,6 @@ class ESClient:
             return []
 
     def get_log_pattern_summary(self, incident_id: str) -> Dict:
-        """Aggregate log levels by service for anomaly summary."""
         index = f"logs-{incident_id.lower()}"
         try:
             result = self.es.search(

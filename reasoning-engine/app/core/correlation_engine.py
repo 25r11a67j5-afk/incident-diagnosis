@@ -1,9 +1,9 @@
-﻿"""
+"""
 Correlation Engine
 Merges data from Elasticsearch (logs, traces) and Prometheus (metrics)
 into a unified investigation context.
-
-This engine NEVER reads ground truth. It works only from observable data.
+Never reads ground truth.
+Accurately records whether data originates from live systems or mock scenario data.
 """
 from __future__ import annotations
 from typing import Any, Dict, List
@@ -17,33 +17,62 @@ class CorrelationEngine:
         self.prom = prom
 
     def correlate(self, scenario: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Pull all observability data for the incident and return a unified context.
-        Returns:
-            {
-              logs, error_logs, traces, trace_map,
-              metrics, log_summary, deployments,
-              known_good_versions, service_dependencies
-            }
-        """
+        # Ground truth is NEVER allowed in the diagnosis path
+        scenario.pop("ground_truth", None)
+
         incident_id = scenario["incident_id"]
         services = scenario.get("services", [])
 
-        # 1. Logs from Elasticsearch
-        logs = self.es.get_logs(incident_id)
-        error_logs = self.es.get_error_logs(incident_id)
-        log_summary = self.es.get_log_pattern_summary(incident_id)
+        es_healthy = self.es.is_healthy()
+        prom_healthy = self.prom.is_healthy()
 
-        # 2. Traces from Elasticsearch
-        traces = self.es.get_traces(incident_id)
+        source_origins = {
+            "es_live": es_healthy,
+            "prom_live": prom_healthy,
+            "logs": "elasticsearch_logs" if es_healthy else "mock_scenario_logs",
+            "traces": "elasticsearch_traces" if es_healthy else "mock_scenario_traces",
+            "metrics": "prometheus" if prom_healthy else "mock_scenario_metrics",
+        }
+
+        # 1. Logs & Traces
+        if es_healthy:
+            logs = self.es.get_logs(incident_id)
+            error_logs = self.es.get_error_logs(incident_id)
+            log_summary = self.es.get_log_pattern_summary(incident_id)
+            traces = self.es.get_traces(incident_id)
+        else:
+            logs = scenario.get("logs", [])
+            error_logs = [l for l in logs if l.get("level") in ("ERROR", "CRITICAL")]
+            traces = scenario.get("traces", [])
+            log_summary = {}
+            for l in logs:
+                svc = l.get("service")
+                lvl = l.get("level")
+                if svc and lvl:
+                    log_summary.setdefault(svc, {})
+                    log_summary[svc][lvl] = log_summary[svc].get(lvl, 0) + 1
+
         trace_map = self._build_trace_map(traces)
 
-        # 3. Metrics from Prometheus per service
+        # 2. Metrics
         metrics: Dict[str, Any] = {}
-        for svc in services:
-            metrics[svc] = self.prom.get_service_snapshot(svc)
+        if prom_healthy:
+            for svc in services:
+                metrics[svc] = self.prom.get_service_snapshot(svc)
+        else:
+            snapshot = scenario.get("metrics_snapshot", {})
+            for svc in services:
+                s_data = snapshot.get(svc, {})
+                metrics[svc] = {
+                    "service": svc,
+                    "error_rate": s_data.get("error_rate"),
+                    "p99_latency_ms": s_data.get("p99_latency_ms"),
+                    "request_rate": s_data.get("request_rate"),
+                    "cpu_percent": s_data.get("cpu_percent"),
+                    "db_connections": s_data.get("db_connections_active") or s_data.get("db_connections"),
+                }
 
-        # 4. Deployment metadata from scenario (no ground truth here)
+        # 3. Metadata
         deployments = scenario.get("deployments", [])
         known_good = scenario.get("known_good_versions", {})
         dependencies = scenario.get("service_dependencies", {})
@@ -64,16 +93,15 @@ class CorrelationEngine:
             "service_dependencies": dependencies,
             "external_dependencies": external_deps,
             "database_state": db_state,
+            "source_origins": source_origins,
         }
 
     def _build_trace_map(self, traces: List[Dict]) -> Dict[str, List[Dict]]:
-        """Group trace spans by trace_id for cross-service correlation."""
         trace_map: Dict[str, List[Dict]] = {}
         for span in traces:
             tid = span.get("trace_id")
             if tid:
                 trace_map.setdefault(tid, []).append(span)
-        # Sort each trace by timestamp
         for tid in trace_map:
             trace_map[tid].sort(key=lambda s: s.get("timestamp", ""))
         return trace_map
