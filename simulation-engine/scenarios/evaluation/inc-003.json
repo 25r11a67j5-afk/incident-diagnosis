@@ -1,0 +1,9 @@
+﻿{
+  "incident_id": "INC-003",
+  "actual_root_cause": "External payment gateway degradation causing retry storms and thread pool exhaustion in payment-service",
+  "correct_action": "circuit_breaker",
+  "rollback_safe": false,
+  "affected_service": "payment-service",
+  "expected_health_after_correct_action": { "error_rate_lt": 0.05, "p99_latency_ms_lt": 500 },
+  "evaluator_notes": "No internal deployment caused this. Rolling back would have no effect. Circuit breaker on external-payment-gateway + degraded mode (return cached/queued responses) is correct."
+}

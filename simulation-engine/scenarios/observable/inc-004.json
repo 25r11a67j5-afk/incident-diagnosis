@@ -1,0 +1,33 @@
+﻿{
+  "incident_id": "INC-004",
+  "severity": "P2",
+  "title": "Sporadic 502 errors on api-gateway — low volume, unclear cause",
+  "declared_at": "2026-09-26T14:15:00Z",
+  "services": ["api-gateway", "payment-service"],
+  "service_dependencies": { "api-gateway": ["payment-service"] },
+  "elasticsearch": {
+    "host": "http://localhost:9200",
+    "log_index": "logs-inc-004",
+    "trace_index": "traces-inc-004",
+    "deployment_index": "deployments-inc-004"
+  },
+  "prometheus": { "host": "http://localhost:9090" },
+  "metrics_snapshot": {
+    "api-gateway":     { "error_rate": 0.008, "p99_latency_ms": 145, "request_rate": 890, "cpu_percent": 28, "db_connections_active": 0 },
+    "payment-service": { "error_rate": 0.005, "p99_latency_ms": 125, "request_rate": 440, "cpu_percent": 31, "db_connections_active": 15 }
+  },
+  "deployments": [],
+  "known_good_versions": {
+    "api-gateway":     { "version": "v11", "health_verified_at": "2026-09-26T14:00:00Z", "baseline_metrics": { "error_rate": 0.001, "p99_latency_ms": 95 } },
+    "payment-service": { "version": "v41", "health_verified_at": "2026-09-26T14:00:00Z", "baseline_metrics": { "error_rate": 0.002, "p99_latency_ms": 120 } }
+  },
+  "logs": [
+    { "timestamp": "2026-09-26T14:00:12Z", "service": "api-gateway", "level": "ERROR", "message": "502 Bad Gateway: upstream connection reset by peer", "trace_id": "trace-s001", "version": "v11" },
+    { "timestamp": "2026-09-26T14:03:45Z", "service": "api-gateway", "level": "ERROR", "message": "502 Bad Gateway: upstream connection reset by peer", "trace_id": "trace-s002", "version": "v11" },
+    { "timestamp": "2026-09-26T14:08:22Z", "service": "api-gateway", "level": "ERROR", "message": "502 Bad Gateway: upstream connection reset by peer", "trace_id": "trace-s003", "version": "v11" },
+    { "timestamp": "2026-09-26T14:10:00Z", "service": "api-gateway", "level": "INFO",  "message": "Error rate returned to baseline", "trace_id": null, "version": "v11" }
+  ],
+  "traces": [
+    { "trace_id": "trace-s001", "span_id": "span-gw-s01", "parent_span_id": null, "service": "api-gateway", "operation": "GET /api/v1/status", "duration_ms": 12, "status": "ERROR", "timestamp": "2026-09-26T14:00:12Z" }
+  ]
+}

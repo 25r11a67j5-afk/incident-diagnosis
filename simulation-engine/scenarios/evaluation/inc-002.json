@@ -1,0 +1,12 @@
+﻿{
+  "incident_id": "INC-002",
+  "actual_root_cause": "v15 DB migration added NOT NULL column email_verified; v14 INSERT statements do not include this column causing constraint violations",
+  "correct_action": "degraded_mode",
+  "rollback_safe": false,
+  "affected_service": "user-service",
+  "expected_health_after_correct_action": {
+    "error_rate_lt": 0.02,
+    "p99_latency_ms_lt": 300
+  },
+  "evaluator_notes": "Rolling back v15->v14 is UNSAFE: v14 does not know about email_verified column. It will issue INSERT statements without the column causing NOT NULL violations on ALL inserts, worsening the incident. Correct action is degraded mode (disable new registrations) while the migration is fixed."
+}

@@ -1,0 +1,75 @@
+﻿{
+  "incident_id": "INC-002",
+  "severity": "P1",
+  "title": "User service errors following v15 deployment with DB schema migration",
+  "declared_at": "2026-09-26T09:20:00Z",
+  "services": ["user-service", "api-gateway", "auth-service"],
+  "service_dependencies": {
+    "api-gateway": ["user-service", "auth-service"],
+    "auth-service": ["user-service"]
+  },
+  "elasticsearch": {
+    "host": "http://localhost:9200",
+    "log_index": "logs-inc-002",
+    "trace_index": "traces-inc-002",
+    "deployment_index": "deployments-inc-002"
+  },
+  "prometheus": {
+    "host": "http://localhost:9090"
+  },
+  "metrics_snapshot": {
+    "user-service": { "error_rate": 0.15, "p99_latency_ms": 800, "request_rate": 320, "cpu_percent": 41, "db_connections_active": 45 },
+    "api-gateway":  { "error_rate": 0.05, "p99_latency_ms": 950, "request_rate": 870, "cpu_percent": 38, "db_connections_active": 0 },
+    "auth-service": { "error_rate": 0.03, "p99_latency_ms": 600, "request_rate": 290, "cpu_percent": 22, "db_connections_active": 10 }
+  },
+  "deployments": [
+    {
+      "service": "user-service",
+      "version": "v15",
+      "previous_version": "v14",
+      "commit": "def789ghi012",
+      "deployed_at": "2026-09-26T09:00:00Z",
+      "deployer": "ci-pipeline",
+      "health_status_before": "healthy",
+      "changes": [
+        "Database schema migration: added NOT NULL column email_verified to users table",
+        "Added email verification flow to user registration",
+        "Updated UserRepository to populate email_verified on login"
+      ]
+    }
+  ],
+  "known_good_versions": {
+    "user-service": {
+      "version": "v14",
+      "health_verified_at": "2026-09-26T08:58:00Z",
+      "baseline_metrics": { "error_rate": 0.001, "p99_latency_ms": 85 },
+      "database_schema_version": 14
+    }
+  },
+  "database_state": {
+    "current_schema_version": 15,
+    "migration_applied_at": "2026-09-26T09:02:00Z",
+    "migration_description": "ALTER TABLE users ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT FALSE",
+    "migration_status": "complete",
+    "backward_compatible": false,
+    "v14_compatibility": "INCOMPATIBLE: v14 code does not include email_verified column in INSERT statements, causing NOT NULL constraint violations on new registrations"
+  },
+  "logs": [
+    { "timestamp": "2026-09-26T09:00:05Z", "service": "user-service", "level": "INFO",  "message": "Deployment v15 started. Running database migrations.", "trace_id": null, "version": "v15" },
+    { "timestamp": "2026-09-26T09:02:10Z", "service": "user-service", "level": "INFO",  "message": "Migration complete: added column email_verified (NOT NULL) to users table.", "trace_id": null, "version": "v15" },
+    { "timestamp": "2026-09-26T09:02:30Z", "service": "user-service", "level": "INFO",  "message": "Deployment v15 complete. Service healthy.", "trace_id": null, "version": "v15" },
+    { "timestamp": "2026-09-26T09:05:00Z", "service": "user-service", "level": "INFO",  "message": "Background job started: backfilling email_verified for existing users.", "trace_id": null, "version": "v15" },
+    { "timestamp": "2026-09-26T09:15:03Z", "service": "user-service", "level": "ERROR", "message": "PG::NotNullViolation: ERROR: null value in column 'email_verified' violates not-null constraint. INSERT INTO users(id, name, email) VALUES (...)", "trace_id": "trace-u001", "version": "v15" },
+    { "timestamp": "2026-09-26T09:15:10Z", "service": "api-gateway",  "level": "ERROR", "message": "user-service returned 500 for POST /api/v1/users/register", "trace_id": "trace-u001", "version": "v22" },
+    { "timestamp": "2026-09-26T09:15:45Z", "service": "user-service", "level": "ERROR", "message": "PG::NotNullViolation: null value in column 'email_verified' violates not-null constraint", "trace_id": "trace-u002", "version": "v15" },
+    { "timestamp": "2026-09-26T09:16:30Z", "service": "user-service", "level": "WARN",  "message": "Error rate rising: 3% -> 8% -> 15% in last 90 seconds", "trace_id": null, "version": "v15" },
+    { "timestamp": "2026-09-26T09:18:00Z", "service": "auth-service", "level": "WARN",  "message": "user-service user lookup failing for some requests", "trace_id": "trace-u003", "version": "v9" },
+    { "timestamp": "2026-09-26T09:20:00Z", "service": "api-gateway",  "level": "CRITICAL", "message": "P1 DECLARED: user-service error rate 15%, impacting registration and some auth flows", "trace_id": null, "version": "v22" }
+  ],
+  "traces": [
+    { "trace_id": "trace-u001", "span_id": "span-gw-u01",  "parent_span_id": null,            "service": "api-gateway",  "operation": "POST /api/v1/users/register", "duration_ms": 420, "status": "ERROR", "timestamp": "2026-09-26T09:15:02Z" },
+    { "trace_id": "trace-u001", "span_id": "span-usr-u01", "parent_span_id": "span-gw-u01",   "service": "user-service", "operation": "createUser",                  "duration_ms": 395, "status": "ERROR", "timestamp": "2026-09-26T09:15:03Z" },
+    { "trace_id": "trace-u002", "span_id": "span-gw-u02",  "parent_span_id": null,            "service": "api-gateway",  "operation": "POST /api/v1/users/register", "duration_ms": 410, "status": "ERROR", "timestamp": "2026-09-26T09:15:44Z" },
+    { "trace_id": "trace-u002", "span_id": "span-usr-u02", "parent_span_id": "span-gw-u02",   "service": "user-service", "operation": "createUser",                  "duration_ms": 388, "status": "ERROR", "timestamp": "2026-09-26T09:15:45Z" }
+  ]
+}

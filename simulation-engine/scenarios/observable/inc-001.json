@@ -1,0 +1,68 @@
+﻿{
+  "incident_id": "INC-001",
+  "severity": "P1",
+  "title": "Payment service degradation following v42 deployment",
+  "declared_at": "2026-09-26T10:07:00Z",
+  "services": ["payment-service", "api-gateway", "order-service"],
+  "service_dependencies": {
+    "api-gateway": ["payment-service", "order-service"],
+    "order-service": ["payment-service"]
+  },
+  "elasticsearch": {
+    "host": "http://localhost:9200",
+    "log_index": "logs-inc-001",
+    "trace_index": "traces-inc-001",
+    "deployment_index": "deployments-inc-001"
+  },
+  "prometheus": {
+    "host": "http://localhost:9090"
+  },
+  "metrics_snapshot": {
+    "payment-service": { "error_rate": 0.31, "p99_latency_ms": 2400, "request_rate": 450, "cpu_percent": 78, "db_connections_active": 95 },
+    "api-gateway":     { "error_rate": 0.12, "p99_latency_ms": 3100, "request_rate": 890, "cpu_percent": 45, "db_connections_active": 0 },
+    "order-service":   { "error_rate": 0.08, "p99_latency_ms": 2900, "request_rate": 210, "cpu_percent": 32, "db_connections_active": 20 }
+  },
+  "deployments": [
+    {
+      "service": "payment-service",
+      "version": "v42",
+      "previous_version": "v41",
+      "commit": "abc123def456",
+      "deployed_at": "2026-09-26T10:00:00Z",
+      "deployer": "ci-pipeline",
+      "health_status_before": "healthy",
+      "changes": [
+        "Changed retry timeout from 5s to 30s in PaymentGatewayClient",
+        "Refactored connection pool initialization"
+      ]
+    }
+  ],
+  "known_good_versions": {
+    "payment-service": {
+      "version": "v41",
+      "health_verified_at": "2026-09-26T09:58:00Z",
+      "baseline_metrics": { "error_rate": 0.002, "p99_latency_ms": 120 }
+    }
+  },
+  "logs": [
+    { "timestamp": "2026-09-26T10:00:02Z", "service": "payment-service", "level": "INFO",  "message": "Deployment v42 started. Retry timeout updated to 30s.", "trace_id": null, "version": "v42" },
+    { "timestamp": "2026-09-26T10:00:15Z", "service": "payment-service", "level": "INFO",  "message": "Deployment v42 complete. Service healthy.", "trace_id": null, "version": "v42" },
+    { "timestamp": "2026-09-26T10:04:03Z", "service": "payment-service", "level": "WARN",  "message": "PaymentGatewayClient: request took 5200ms (threshold: 2000ms)", "trace_id": "trace-001", "version": "v42" },
+    { "timestamp": "2026-09-26T10:04:08Z", "service": "payment-service", "level": "ERROR", "message": "ConnectionTimeout: payment gateway did not respond within 30000ms", "trace_id": "trace-001", "version": "v42" },
+    { "timestamp": "2026-09-26T10:04:09Z", "service": "api-gateway",    "level": "ERROR", "message": "Upstream payment-service returned 504 after 30s", "trace_id": "trace-001", "version": "v11" },
+    { "timestamp": "2026-09-26T10:04:30Z", "service": "payment-service", "level": "ERROR", "message": "ConnectionTimeout: payment gateway did not respond within 30000ms", "trace_id": "trace-002", "version": "v42" },
+    { "timestamp": "2026-09-26T10:04:31Z", "service": "order-service",  "level": "WARN",  "message": "payment-service dependency slow: 30200ms", "trace_id": "trace-002", "version": "v8" },
+    { "timestamp": "2026-09-26T10:05:00Z", "service": "payment-service", "level": "ERROR", "message": "Thread pool saturated: 95/100 connections active", "trace_id": null, "version": "v42" },
+    { "timestamp": "2026-09-26T10:05:15Z", "service": "payment-service", "level": "CRITICAL", "message": "Circuit breaker OPEN: error rate 31% exceeds threshold 10%", "trace_id": null, "version": "v42" },
+    { "timestamp": "2026-09-26T10:05:20Z", "service": "api-gateway",    "level": "ERROR", "message": "payment-service circuit breaker open — returning 503", "trace_id": "trace-003", "version": "v11" },
+    { "timestamp": "2026-09-26T10:06:00Z", "service": "order-service",  "level": "ERROR", "message": "Cannot process orders: payment-service unavailable", "trace_id": null, "version": "v8" },
+    { "timestamp": "2026-09-26T10:07:00Z", "service": "api-gateway",    "level": "CRITICAL", "message": "P1 DECLARED: payment-service degradation impacting 35% of requests", "trace_id": null, "version": "v11" }
+  ],
+  "traces": [
+    { "trace_id": "trace-001", "span_id": "span-gw-001",  "parent_span_id": null,          "service": "api-gateway",    "operation": "POST /api/v1/orders", "duration_ms": 30412, "status": "ERROR", "timestamp": "2026-09-26T10:04:02Z" },
+    { "trace_id": "trace-001", "span_id": "span-ord-001", "parent_span_id": "span-gw-001",  "service": "order-service",  "operation": "processOrder",        "duration_ms": 30380, "status": "ERROR", "timestamp": "2026-09-26T10:04:02Z" },
+    { "trace_id": "trace-001", "span_id": "span-pay-001", "parent_span_id": "span-ord-001", "service": "payment-service","operation": "chargePayment",       "duration_ms": 30350, "status": "ERROR", "timestamp": "2026-09-26T10:04:03Z" },
+    { "trace_id": "trace-002", "span_id": "span-gw-002",  "parent_span_id": null,           "service": "api-gateway",    "operation": "POST /api/v1/orders", "duration_ms": 30400, "status": "ERROR", "timestamp": "2026-09-26T10:04:29Z" },
+    { "trace_id": "trace-002", "span_id": "span-pay-002", "parent_span_id": "span-gw-002",  "service": "payment-service","operation": "chargePayment",       "duration_ms": 30320, "status": "ERROR", "timestamp": "2026-09-26T10:04:30Z" }
+  ]
+}

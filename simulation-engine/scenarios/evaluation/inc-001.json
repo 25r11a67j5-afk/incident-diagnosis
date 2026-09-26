@@ -1,0 +1,12 @@
+﻿{
+  "incident_id": "INC-001",
+  "actual_root_cause": "Deployment v42 changed retry timeout from 5s to 30s causing thread pool exhaustion under normal load",
+  "correct_action": "rollback",
+  "rollback_safe": true,
+  "affected_service": "payment-service",
+  "expected_health_after_correct_action": {
+    "error_rate_lt": 0.01,
+    "p99_latency_ms_lt": 200
+  },
+  "evaluator_notes": "Rollback v42→v41 restores the 5s timeout. No schema changes. Safe to execute."
+}

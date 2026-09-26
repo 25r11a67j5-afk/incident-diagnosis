@@ -1,0 +1,9 @@
+﻿{
+  "incident_id": "INC-004",
+  "actual_root_cause": "Intermittent network partition between api-gateway and upstream load balancer",
+  "correct_action": "investigate_further",
+  "rollback_safe": false,
+  "affected_service": "api-gateway",
+  "expected_health_after_correct_action": { "error_rate_lt": 0.005 },
+  "evaluator_notes": "Evidence is insufficient. Only 3 errors over 10 min, no clear pattern, no recent deployments. System should correctly say: need network layer metrics, packet loss data, load balancer logs."
+}
