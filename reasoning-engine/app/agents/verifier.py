@@ -1,13 +1,16 @@
-﻿"""
-Verifier Agent — Pass 2 of 2 (Multi-agent bonus)
+"""
+Verifier Agent - Pass 2 of 2 (Multi-agent bonus)
 Receives the top hypothesis + evidence and independently verifies it.
 Also recommends the remediation action, separating mitigation from remediation.
 """
 from __future__ import annotations
-import json, re
+import json
+import logging
 from typing import Any, Dict, List
-
 from groq import Groq
+from app.agents.groq_client import call_groq_json
+
+logger = logging.getLogger(__name__)
 
 VERIFIER_SCHEMA = """{
   "hypothesis_verified": true,
@@ -33,13 +36,6 @@ def run_verifier(
     client: Groq,
     model: str,
 ) -> Dict[str, Any]:
-    """
-    Pass 2: Verify the top hypothesis and recommend the safest action.
-
-    CRITICAL INSTRUCTION to LLM: The verifier must NOT factor in ground truth.
-    It reasons from the evidence about whether rollback is structurally safe.
-    The policy engine will make the final rollback eligibility decision.
-    """
     prompt = f"""You are a senior SRE verifying an incident hypothesis and recommending an action.
 
 TOP HYPOTHESIS TO VERIFY:
@@ -69,32 +65,28 @@ TASK (Verifier Pass):
 3. Separately suggest what the permanent remediation should be (fix the root cause, not just symptoms).
 
 IMPORTANT: If the deployment changes include a database schema migration, recommend degraded_mode
-or investigate_further — NOT rollback. The policy engine will enforce this, but your recommendation
+or investigate_further - NOT rollback. The policy engine will enforce this, but your recommendation
 should already reflect this analysis.
 
 Respond with ONLY valid JSON matching:
 {VERIFIER_SCHEMA}"""
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": "You are a senior SRE. Respond with ONLY valid JSON."},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.1,
-        max_tokens=1200,
-    )
-    return _parse_json(response.choices[0].message.content)
+    messages = [
+        {"role": "system", "content": "You are a senior SRE. Respond with ONLY valid JSON matching the exact schema."},
+        {"role": "user", "content": prompt},
+    ]
 
+    data = call_groq_json(client=client, messages=messages, preferred_model=model, max_tokens=2500)
 
-def _parse_json(raw: str) -> Dict:
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        match = re.search(r"```(?:json)?\s*(.*?)```", raw, re.DOTALL)
-        if match:
-            return json.loads(match.group(1))
-        start, end = raw.find("{"), raw.rfind("}")
-        if start != -1 and end != -1:
-            return json.loads(raw[start : end + 1])
-        raise ValueError(f"Could not parse LLM JSON response: {raw[:200]}")
+    if "recommended_action" not in data or not isinstance(data["recommended_action"], dict):
+        data["recommended_action"] = {
+            "type": "investigate_further",
+            "category": "immediate_mitigation",
+            "target_service": top_hypothesis.get("service", "unknown"),
+            "target_version": None,
+            "reasoning": "Incomplete verifier response.",
+            "is_reversible": True,
+            "expected_recovery": None,
+        }
+
+    return data

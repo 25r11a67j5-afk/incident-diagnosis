@@ -1,0 +1,29 @@
+﻿# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+*.egg-info/
+.pytest_cache/
+dist/
+build/
+
+# Env files (never commit secrets)
+.env
+!.env.example
+
+# Reasoning engine cache (runtime, not committed)
+reasoning-engine/cache/*.json
+
+# Simulation engine data volumes
+simulation-engine/data/
+
+# Node / frontend (Person 3 will add their own)
+node_modules/
+.next/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
